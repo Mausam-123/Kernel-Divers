@@ -5,6 +5,10 @@
 #include <linux/uaccess.h>	// Copy to/from user
 #include <linux/device.h>
 #include <linux/err.h>
+#include <asm/page.h>
+#include <linux/mm.h>
+#include <asm/io.h>
+#include <linux/slab.h>
 
 //Macros
 #define DEVICE_NAME "my_char_dev"
@@ -16,6 +20,7 @@ int major_num = 0;
 int minor_num = 0;
 static struct class *my_char_class;
 static struct device *my_char_device;
+static void *kernel_buf;
 
 //Function prototypes
 static ssize_t char_dev_read(struct file *, char __user *, size_t, loff_t *);
@@ -23,9 +28,9 @@ static int __init my_chardev_init(void);
 static void __exit my_chardev_exit(void);
 static int char_dev_open (struct inode *inode, struct file *file);
 static int char_dev_release(struct inode *inode, struct file *file);
-static ssize_t char_dev_read(struct file *file, char __user *buf, size_t size, loff_t *offset);
-static ssize_t char_dev_write(struct file * file, const char __user *buf, size_t size, loff_t *offset);
-static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area_struct); 
+static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset);
+static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset);
+static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area); 
 
 /* open() : When file is opened for the first time, VFS layer intercept the system call
  * Creates struct inode ---> allocate and initialize struct file ----> set fops field with cdev fops
@@ -41,18 +46,85 @@ static int char_dev_release(struct inode *inode, struct file *file) {
 	return 0;
 }
 
-static ssize_t char_dev_read(struct file *file, char __user *buf, size_t size, loff_t *offset) {
- 	printk("Mausam - Invoking the read function call\n");
- 	return 0;
+static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset) {
+ 	int not_copy=0;
+	int delta = 0;
+	int to_copy = 0;
+
+	printk("Mausam - Invoking the read callback function\n");
+	to_copy = (len + *offset) < PAGE_SIZE ?  len : (PAGE_SIZE - *offset);
+	
+	if (*offset >= PAGE_SIZE) {
+		printk("Mausam(read) - EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
+		return 0;
+	}
+
+	not_copy = copy_to_user(user_buf, kernel_buf + *offset, to_copy);
+	delta = to_copy - not_copy;
+	*offset += delta;
+	if(not_copy != 0) {
+		printk("Mausam(read) - Expected read bytes : %ld, but only read : %d, current offset : %lld\n", len, delta, *offset);
+	} else {
+		printk("Mausam(read) - Expected read bytes : %ld, read all %d bytes, current offset : %lld\n", len, to_copy, *offset);
+	}
+	return delta;
  }
 
-static ssize_t char_dev_write(struct file * file, const char __user *buf, size_t size, loff_t *offset) {
-	printk("Mausam - Invoking the write function call\n");
-	return 0;
+static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset) {
+	int not_copy = 0;
+	int delta = 0;
+	int to_copy = 0;
+	
+	printk("Mausam - Invoking the write callback function\n");
+	to_copy = (len + *offset) < PAGE_SIZE? len : (PAGE_SIZE - *offset);
+
+	if(*offset >= PAGE_SIZE) {
+		printk("Mausam(write) - EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
+		return 0;
+	}
+
+	not_copy = copy_from_user(kernel_buf + *offset, user_buf, to_copy);
+	delta = to_copy - not_copy;
+	*offset += delta;
+	if(not_copy != 0) {
+		printk("Mausam(write) - Expected write bytes : %ld, but only wrriten : %d, current offset : %lld\n", len, delta, *offset);
+        } else {
+		printk("Mausam(write) - Expected write bytes : %ld, written all %d bytes, current offset : %lld\n", len, to_copy, *offset);
+	}
+	
+	return delta;
 }
 
-static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area_struct) {
+static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area) {
+	int status = 0;
+	
 	printk("Mausam - Invoking the mmap function call\n");
+	
+	/* virt_to_phy() : Get the physical page frame number
+	 * kernel_buf is mapped to kernel address space, we need to get actual physical memory for mapping it into user space VM
+         * i.e kernel VM ---> Physical Memory ----> User Space VM
+	 */
+	vm_area->vm_pgoff = virt_to_phys(kernel_buf) >> PAGE_SHIFT;
+	
+	/* vm_start and vm_end is already decided by the Linux MMU based on size agrument of user space mmap() call,
+	 * Need to check kernel has allocated appropriate virtual memory for mapping or not
+	 */
+	if ((vm_area->vm_end - vm_area->vm_start) > PAGE_SIZE) {
+		printk("Mausam(mmap) - Allowed allocation 1 page, but user has requested more then 1 pages\n");
+		return -ENOMEM;
+	}
+	
+	/* remap_pfn_range() : Map the physical page frame number into user virtual address space
+	 * As vm_start and vm_end is already decided, map allocated PFN to this range
+	 */
+	status = remap_pfn_range(vm_area, vm_area->vm_start, vm_area->vm_pgoff, vm_area->vm_end - vm_area->vm_start, vm_area->vm_page_prot);
+	
+	if (status != 0) {
+		printk("Mausam(mmap) : remap_pfn_range() FAILED to map page size : %ld\n", PAGE_SIZE);
+		return -ENOMEM;
+	}
+
+	printk("Mausam(mmap): vma_start: 0x%lx, vma_size: 0x%lx\n", vm_area->vm_start, vm_area->vm_end - vm_area->vm_start);
 	return 0;
 }
 
@@ -66,6 +138,12 @@ static struct file_operations fops = {
 
 static int __init my_chardev_init(void) {	
 	int ret = 0;
+	
+	kernel_buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (kernel_buf == NULL) {
+		printk("Mausam - Failed to allocate %ld bytes\n", PAGE_SIZE);
+		return -ENOMEM;
+	}
 
 	//Dynamically allocate major and minor number
 	ret = alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
