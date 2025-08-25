@@ -30,7 +30,8 @@ static int char_dev_open (struct inode *inode, struct file *file);
 static int char_dev_release(struct inode *inode, struct file *file);
 static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset);
 static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset);
-static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area); 
+static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area);
+static loff_t char_dev_llseek(struct file *file, loff_t offset, int type);
 
 /* open() : When file is opened for the first time, VFS layer intercept the system call
  * Creates struct inode ---> allocate and initialize struct file ----> set fops field with cdev fops
@@ -128,12 +129,44 @@ static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area) {
 	return 0;
 }
 
+static loff_t char_dev_llseek(struct file *file, loff_t offset, int type) {
+	loff_t position = 0;
+
+	printk("Mausam - Invoking the llseek callback function\n");
+	switch(type) {
+		//SEEK_SET — set position to offset
+		case SEEK_SET:
+			position = offset;
+			break;
+		//SEEK_CUR — set position to current position + offset
+		case SEEK_CUR:
+			position = file->f_pos + offset;
+			break;
+		//SEEK_END — set position relative to the end (if applicable, e.g., size of device data)
+		case SEEK_END:
+			position = PAGE_SIZE + offset;
+			break;
+		default:
+			printk("Mausam(llseek) : Invalid llseek type\n");
+			return -EINVAL;
+	}
+
+	if (position < 0 || position > PAGE_SIZE) {
+		printk("Mausam(llseek) : Invalid Postion (%lld) llseek range: [0, (%ld)]\n", position, PAGE_SIZE);
+		return -EINVAL;
+	}
+
+	file->f_pos = position;
+	return position;
+}
+
 static struct file_operations fops = {
 	.open = char_dev_open,
 	.release = char_dev_release,
 	.read = char_dev_read,
 	.write = char_dev_write,
-	.mmap = char_dev_mmap
+	.mmap = char_dev_mmap,
+	.llseek = char_dev_llseek
 };
 
 static int __init my_chardev_init(void) {	
