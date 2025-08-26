@@ -5,53 +5,43 @@
  * struct inode is unique but struct file is per open instance
  */
 static int char_dev_open (struct inode *inode, struct file *file){
-	printk("Mausam - Opening the file\n");
+	dev_print("Opening the file\n");
 	return 0;
 }
 
 static int char_dev_release(struct inode *inode, struct file *file) {
-	printk("Mausam - Closing the file\n");
+	dev_print("Closing the file\n");
 	return 0;
-}
-
-static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset) {
-	printk("Mausam - Invoking the read callback function\n");
-	return 1;
- }
-
-static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset) {
-	printk("Mausam - Invoking the write callback function\n");
-	return 1;
 }
 
 static int my_cpu_driver_probe(struct device *dev)
 {
-    printk("Mausam : My cpu driver probe called\n");
+    dev_print("My cpu driver probe called\n");
     struct cpufreq_policy *policy = cpufreq_cpu_get(0);
     if (!policy) {
-        printk("cpufreq policy not found\n");
+        dev_print("cpufreq policy not found\n");
         return -ENODEV;
     }
-    printk("CPU0 frequency at probe: %u kHz\n", policy->cur);
+    dev_print("CPU0 frequency at probe: %u kHz\n", policy->cur);
     cpufreq_cpu_put(policy);
     return 0;
 }
 
 static int my_cpu_driver_remove(struct device *dev)
 {
-    printk("Driver remove called\n");
+    dev_print("Driver remove called\n");
     return 0;
 }
 
 static void my_char_device_release(struct device *dev) {
-        printk("Mausam - Device release function is getting invoked\n");
+        dev_print("Device release function is getting invoked\n");
         kfree(dev);
         return;
 }
 
 //Bus matching function called during device probe
 static int char_bus_match (struct device *dev, const struct device_driver *drv) {
-        printk("Match status : %d\n", strcmp(dev_name(dev), drv->name));
+        dev_print("Match status : %d\n", strcmp(dev_name(dev), drv->name));
         return !strcmp(dev_name(dev), drv->name);
 }
 
@@ -63,8 +53,6 @@ static const struct bus_type simple_bus = {
 static struct file_operations fops = {
 	.open = char_dev_open,
 	.release = char_dev_release,
-	.read = char_dev_read,
-	.write = char_dev_write,
 };
 
 static int __init my_chardev_init(void) {	
@@ -72,19 +60,20 @@ static int __init my_chardev_init(void) {
 	
 	ret = bus_register(&simple_bus);
     	if (ret) {
+		dev_print("bus_register() FAILED with error - %d\n", ret);
 		return ret;
 	}
 
 	//Dynamically allocate major and minor number
 	ret = alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
 	if (ret < 0) {
-		printk("Mausam - alloc_chrdev_region() FAILED  with error - %d\n", ret);
-		return ret;
+		dev_print("alloc_chrdev_region() FAILED  with error - %d\n", ret);
+		goto fail_0;
 	}
 	
 	major_num = MAJOR(dev_num);
 	minor_num = MINOR(dev_num);
-	printk("Mausam = Major:Minor - %d : %d\n", major_num, minor_num);
+	dev_print("Major:Minor - %d : %d\n", major_num, minor_num);
 
 	cdev_init(&char_dev, &fops);	// Initailze character driver with fops
 	char_dev.owner = THIS_MODULE;
@@ -95,9 +84,8 @@ static int __init my_chardev_init(void) {
 	 */
 	ret = cdev_add(&char_dev, dev_num, 1);
 	if (ret < 0) {
-		printk("Mausam - cdev_add() FAILED, device is not ready to use");
+		dev_print("cdev_add() FAILED with error - %d", ret);
 		goto fail;
-		return ret;
 	}
 
 	/*
@@ -108,17 +96,17 @@ static int __init my_chardev_init(void) {
 	 */
 	my_char_class = class_create(CLASS_NAME);
 	if (IS_ERR(my_char_class)) {
-		printk("Mausam - class_create() FAILED, with error - %ld\n", PTR_ERR(my_char_class));
+		dev_print("class_create() FAILED, with error - %ld\n", PTR_ERR(my_char_class));
 		ret = PTR_ERR(my_char_class);
 		goto fail_1;
 	} else {
-		printk("Mausam - sys/class/%s is created \n", CLASS_NAME);
+		dev_print("sys/class/%s created \n", CLASS_NAME);
 	}
 
 	//Allocate struct device
 	my_char_device = kzalloc(sizeof(*my_char_device), GFP_KERNEL);
 	if(my_char_device == NULL) {
-		printk("Mausam - Failed to allocate device structure\n");
+		dev_print("Failed to allocate device structure\n");
 		goto fail_2;
 	}
 
@@ -140,10 +128,10 @@ static int __init my_chardev_init(void) {
 	ret = device_add(my_char_device);
 	if (ret) {
 		put_device(my_char_device);
-    		printk("Mausam: device_add() FAILED\n");
+    		dev_print("device_add() FAILED\n");
 		goto fail_2;
 	} else {
-		printk("Mausam - dev/%s is created \n", DEVICE_NAME);
+		dev_print("dev/%s is created \n", DEVICE_NAME);
 	}
 	
 	memset(&my_cpu_driver, 0, sizeof(struct device_driver));
@@ -158,10 +146,10 @@ static int __init my_chardev_init(void) {
 	 */
 	ret = driver_register(&my_cpu_driver);
 	if(ret != 0) {
-		printk("Mausam - driver_register() FAILED with error - %d\n", ret);
+		dev_print("driver_register() FAILED with error - %d\n", ret);
 		goto fail_3;
 	} else {
-		printk("Mausam - driver registration success\n");
+		dev_print("driver registration success\n");
 	}
 	
 	return 0;
@@ -174,6 +162,7 @@ fail_1:
 	cdev_del(&char_dev);
 fail:
 	unregister_chrdev_region(dev_num, 1);
+fail_0:	
 	bus_unregister(&simple_bus);
 	return ret;
 }
@@ -185,7 +174,7 @@ static void __exit my_chardev_exit(void) {
 	cdev_del(&char_dev);
 	unregister_chrdev_region(dev_num, 1);
 	bus_unregister(&simple_bus);
-	printk("Mausam - Unloading the kernel module\n");
+	dev_print("Unloading the kernel module\n");
 	return;
 }
 
@@ -193,5 +182,5 @@ module_init(my_chardev_init);
 module_exit(my_chardev_exit);
 
 MODULE_AUTHOR("Mausam");
-MODULE_DESCRIPTION("A simple character driver");
+MODULE_DESCRIPTION("A simple character cpu interaction");
 MODULE_LICENSE("GPL");

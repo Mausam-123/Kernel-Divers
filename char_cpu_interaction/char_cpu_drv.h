@@ -11,6 +11,7 @@
 #define DEVICE_NAME "simple_char_dev"
 #define CLASS_NAME "simple_char_class"
 #define BUS_NAME "simple_char_bus"
+#define dev_print(fmt, ...) 	printk(KERN_DEFAULT "Mausam : " fmt, ##__VA_ARGS__)
 
 dev_t dev_num;
 struct cdev char_dev;
@@ -21,15 +22,20 @@ static struct device *my_char_device;
 static struct device_driver my_cpu_driver;
 
 //Function prototypes
-static ssize_t char_dev_read(struct file *, char __user *, size_t, loff_t *);
 static int __init my_chardev_init(void);
+
 static void __exit my_chardev_exit(void);
+
 static int char_dev_open (struct inode *inode, struct file *file);
+
 static int char_dev_release(struct inode *inode, struct file *file);
-static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset);
-static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset);
-static int char_bus_match (struct device *dev, const struct device_driver *drv);
+
+static int char_bus_match (struct device *dev,
+				const struct device_driver *drv);
+
 static void my_char_device_release(struct device *dev);
+
 static int my_cpu_driver_probe(struct device *dev);
+
 static int my_cpu_driver_remove(struct device *dev);
 
