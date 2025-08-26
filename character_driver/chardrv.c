@@ -1,49 +1,16 @@
-#include <linux/module.h>	// Core header for loading LKMs into the kernel
-#include <linux/init.h>		// Macros for init and exit functions
-#include <linux/fs.h>		// File operation structures
-#include <linux/cdev.h>		// Character device registratio
-#include <linux/uaccess.h>	// Copy to/from user
-#include <linux/device.h>
-#include <linux/err.h>
-#include <asm/page.h>
-#include <linux/mm.h>
-#include <asm/io.h>
-#include <linux/slab.h>
-
-//Macros
-#define DEVICE_NAME "my_char_dev"
-#define CLASS_NAME "my_char_class"
-
-dev_t dev_num; 
-struct cdev char_dev;
-int major_num = 0;
-int minor_num = 0;
-static struct class *my_char_class;
-static struct device *my_char_device;
-static void *kernel_buf;
-
-//Function prototypes
-static ssize_t char_dev_read(struct file *, char __user *, size_t, loff_t *);
-static int __init my_chardev_init(void);
-static void __exit my_chardev_exit(void);
-static int char_dev_open (struct inode *inode, struct file *file);
-static int char_dev_release(struct inode *inode, struct file *file);
-static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t len, loff_t *offset);
-static ssize_t char_dev_write(struct file * file, const char __user *user_buf, size_t len, loff_t *offset);
-static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area);
-static loff_t char_dev_llseek(struct file *file, loff_t offset, int type);
+#include "chardrv.h"
 
 /* open() : When file is opened for the first time, VFS layer intercept the system call
  * Creates struct inode ---> allocate and initialize struct file ----> set fops field with cdev fops
  * struct inode is unique but struct file is per open instance
  */
 static int char_dev_open (struct inode *inode, struct file *file){
-	printk("Mausam - Opening the file\n");
+	dev_print("Opening the file\n");
 	return 0;
 }
 
 static int char_dev_release(struct inode *inode, struct file *file) {
-	printk("Mausam - Closing the file\n");
+	dev_print("Closing the file\n");
 	return 0;
 }
 
@@ -52,11 +19,11 @@ static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t le
 	int delta = 0;
 	int to_copy = 0;
 
-	printk("Mausam - Invoking the read callback function\n");
+	dev_print("Invoking the read callback function\n");
 	to_copy = (len + *offset) < PAGE_SIZE ?  len : (PAGE_SIZE - *offset);
 	
 	if (*offset >= PAGE_SIZE) {
-		printk("Mausam(read) - EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
+		dev_print("EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
 		return 0;
 	}
 
@@ -64,9 +31,9 @@ static ssize_t char_dev_read(struct file *file, char __user *user_buf, size_t le
 	delta = to_copy - not_copy;
 	*offset += delta;
 	if(not_copy != 0) {
-		printk("Mausam(read) - Expected read bytes : %ld, but only read : %d, current offset : %lld\n", len, delta, *offset);
+		dev_print("Expected read bytes : %ld, but only read : %d, current offset : %lld\n", len, delta, *offset);
 	} else {
-		printk("Mausam(read) - Expected read bytes : %ld, read all %d bytes, current offset : %lld\n", len, to_copy, *offset);
+		dev_print("Expected read bytes : %ld, read all %d bytes, current offset : %lld\n", len, to_copy, *offset);
 	}
 	return delta;
  }
@@ -76,11 +43,11 @@ static ssize_t char_dev_write(struct file * file, const char __user *user_buf, s
 	int delta = 0;
 	int to_copy = 0;
 	
-	printk("Mausam - Invoking the write callback function\n");
+	dev_print("Invoking the write callback function\n");
 	to_copy = (len + *offset) < PAGE_SIZE? len : (PAGE_SIZE - *offset);
 
 	if(*offset >= PAGE_SIZE) {
-		printk("Mausam(write) - EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
+		dev_print("EOF is reached, offset : %lld and buf size : %ld\n", *offset, PAGE_SIZE);
 		return 0;
 	}
 
@@ -88,9 +55,9 @@ static ssize_t char_dev_write(struct file * file, const char __user *user_buf, s
 	delta = to_copy - not_copy;
 	*offset += delta;
 	if(not_copy != 0) {
-		printk("Mausam(write) - Expected write bytes : %ld, but only wrriten : %d, current offset : %lld\n", len, delta, *offset);
+		dev_print("Expected write bytes : %ld, but only wrriten : %d, current offset : %lld\n", len, delta, *offset);
         } else {
-		printk("Mausam(write) - Expected write bytes : %ld, written all %d bytes, current offset : %lld\n", len, to_copy, *offset);
+		dev_print("Expected write bytes : %ld, written all %d bytes, current offset : %lld\n", len, to_copy, *offset);
 	}
 	
 	return delta;
@@ -99,7 +66,7 @@ static ssize_t char_dev_write(struct file * file, const char __user *user_buf, s
 static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area) {
 	int status = 0;
 	
-	printk("Mausam - Invoking the mmap function call\n");
+	dev_print("Invoking the mmap function call\n");
 	
 	/* virt_to_phy() : Get the physical page frame number
 	 * kernel_buf is mapped to kernel address space, we need to get actual physical memory for mapping it into user space VM
@@ -111,7 +78,7 @@ static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area) {
 	 * Need to check kernel has allocated appropriate virtual memory for mapping or not
 	 */
 	if ((vm_area->vm_end - vm_area->vm_start) > PAGE_SIZE) {
-		printk("Mausam(mmap) - Allowed allocation 1 page, but user has requested more then 1 pages\n");
+		dev_print("Allowed allocation 1 page, but user has requested more then 1 pages\n");
 		return -ENOMEM;
 	}
 	
@@ -121,18 +88,18 @@ static int char_dev_mmap(struct file *file, struct vm_area_struct *vm_area) {
 	status = remap_pfn_range(vm_area, vm_area->vm_start, vm_area->vm_pgoff, vm_area->vm_end - vm_area->vm_start, vm_area->vm_page_prot);
 	
 	if (status != 0) {
-		printk("Mausam(mmap) : remap_pfn_range() FAILED to map page size : %ld\n", PAGE_SIZE);
+		dev_print("remap_pfn_range() FAILED to map page size : %ld\n", PAGE_SIZE);
 		return -ENOMEM;
 	}
 
-	printk("Mausam(mmap): vma_start: 0x%lx, vma_size: 0x%lx\n", vm_area->vm_start, vm_area->vm_end - vm_area->vm_start);
+	dev_print("vma_start: 0x%lx, vma_size: 0x%lx\n", vm_area->vm_start, vm_area->vm_end - vm_area->vm_start);
 	return 0;
 }
 
 static loff_t char_dev_llseek(struct file *file, loff_t offset, int type) {
 	loff_t position = 0;
 
-	printk("Mausam - Invoking the llseek callback function\n");
+	dev_print("Invoking the llseek callback function\n");
 	switch(type) {
 		//SEEK_SET — set position to offset
 		case SEEK_SET:
@@ -152,12 +119,59 @@ static loff_t char_dev_llseek(struct file *file, loff_t offset, int type) {
 	}
 
 	if (position < 0 || position > PAGE_SIZE) {
-		printk("Mausam(llseek) : Invalid Postion (%lld) llseek range: [0, (%ld)]\n", position, PAGE_SIZE);
+		dev_print("Invalid Postion (%lld) llseek range: [0, (%ld)]\n", position, PAGE_SIZE);
 		return -EINVAL;
 	}
 
 	file->f_pos = position;
 	return position;
+}
+
+long char_dev_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long args) {
+	int status  = 0;
+	struct user_metadata metadata;
+
+
+	//Allow only specific magic number operation
+	if (_IOC_TYPE(cmd) != IOCTL_MAGIC) {
+		dev_print("Invalid magic number %u\n", cmd);
+		status = -EOPNOTSUPP;
+		goto label;
+	}
+
+	switch(cmd) {
+		case IOCTL_RD_DATA:
+			status = copy_to_user((int *) args, &get_data, sizeof(int));
+			if (status) {
+				dev_print("Unable to write %d bytes\n", status);
+				goto label;
+			}
+			dev_print("Kerne wrote %d into user buffer\n", get_data);
+			break;
+		case IOCTL_WR_DATA:
+			status = copy_from_user(&get_data, (int *) args, sizeof(int));
+			if(status) {
+				dev_print("Unable to copy %d bytes\n", status);
+				goto label;
+			}
+			dev_print("User wrote %d in kernel buffer\n", get_data);
+			break;
+		case IOCTL_WR_METADATA:
+			status = copy_from_user(&metadata, (struct user_metadata *)args, sizeof(metadata));
+			if (status) {
+				dev_print("Unable for copy %d of metadata\n", status);
+				goto label;
+			}
+			for(int i =0; i < metadata.count; i++) {
+				dev_print("%s\n", metadata.name);
+			}
+			break;
+		default:
+			dev_print("Invalid command ID - %u\n", cmd);
+			status = -EOPNOTSUPP;
+	}
+label:
+	return status;
 }
 
 static struct file_operations fops = {
@@ -166,7 +180,8 @@ static struct file_operations fops = {
 	.read = char_dev_read,
 	.write = char_dev_write,
 	.mmap = char_dev_mmap,
-	.llseek = char_dev_llseek
+	.llseek = char_dev_llseek,
+	.unlocked_ioctl = char_dev_unlocked_ioctl
 };
 
 static int __init my_chardev_init(void) {	
@@ -174,22 +189,22 @@ static int __init my_chardev_init(void) {
 	
 	kernel_buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (kernel_buf == NULL) {
-		printk("Mausam - Failed to allocate %ld bytes\n", PAGE_SIZE);
+		dev_print("Failed to allocate %ld bytes\n", PAGE_SIZE);
 		return -ENOMEM;
 	}
 
 	//Dynamically allocate major and minor number
 	ret = alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
 	if (ret < 0) {
-		printk("Mausam - alloc_chrdev_region() FAILED  with error - %d\n", ret);
+		dev_print("alloc_chrdev_region() FAILED  with error - %d\n", ret);
 		return ret;
 	} else {
-		printk("Mausam - alloc_chrdev_region() PASSED  with status - %d\n", ret);
+		dev_print("alloc_chrdev_region() PASSED  with status - %d\n", ret);
 	}
 	
 	major_num = MAJOR(dev_num);
 	minor_num = MINOR(dev_num);
-	printk("Mausam = Major:Minor = %d : %d\n", major_num, minor_num);
+	dev_print("Major:Minor = %d : %d\n", major_num, minor_num);
 
 	cdev_init(&char_dev, &fops);	// Initailze character driver with fops
 	char_dev.owner = THIS_MODULE;
@@ -200,7 +215,7 @@ static int __init my_chardev_init(void) {
 	 */
 	ret = cdev_add(&char_dev, dev_num, 1);
 	if (ret < 0) {
-		printk("Mausam - cdev_add() FAILED, device is not ready to use");
+		dev_print("cdev_add() FAILED, device is not ready to use");
 		goto fail;
 		return ret;
 	}
@@ -213,11 +228,11 @@ static int __init my_chardev_init(void) {
 	 */
 	my_char_class = class_create(CLASS_NAME);
 	if (IS_ERR(my_char_class)) {
-		printk("Mausam - class_create() FAILED, with error - %ld\n", PTR_ERR(my_char_class));
+		dev_print("class_create() FAILED, with error - %ld\n", PTR_ERR(my_char_class));
 		ret = PTR_ERR(my_char_class);
 		goto fail_1;
 	} else {
-		printk("Mausam - sys/class/%s is created \n", CLASS_NAME);
+		dev_print("sys/class/%s is created \n", CLASS_NAME);
 	}
 
 	/*
@@ -229,11 +244,11 @@ static int __init my_chardev_init(void) {
 	 */
 	my_char_device = device_create(my_char_class, NULL, dev_num, NULL, DEVICE_NAME);
 	if(IS_ERR(my_char_device)) {
-		printk("Mausam - device_create() FAILED, with error - %ld\n", PTR_ERR(my_char_device));
+		dev_print("device_create() FAILED, with error - %ld\n", PTR_ERR(my_char_device));
 		ret = PTR_ERR(my_char_device);
 		goto fail_2;
 	} else {
-		printk("Mausam - dev/%s is created \n", DEVICE_NAME);
+		dev_print("dev/%s is created \n", DEVICE_NAME);
 	}
 	return 0;
 
@@ -251,7 +266,7 @@ static void __exit my_chardev_exit(void) {
 	class_destroy(my_char_class);
 	cdev_del(&char_dev);
 	unregister_chrdev_region(dev_num, 1);
-	printk("Mausam - Unloading the kernel module\n");
+	dev_print("Unloading the kernel module\n");
 	return;
 }
 
