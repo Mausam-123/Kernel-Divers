@@ -1,0 +1,41 @@
+Build Error:
+=====
+make -C /lib/modules/6.14.0-28-generic/build M=/home/mac/LDD_Work/my_repo/Kernel-Divers/softirq modules
+make[1]: Entering directory '/usr/src/linux-headers-6.14.0-28-generic'
+make[2]: Entering directory '/home/mac/LDD_Work/my_repo/Kernel-Divers/softirq'
+warning: the compiler differs from the one used to build the kernel
+  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0
+  CC [M]  softirq.o
+  MODPOST Module.symvers
+ERROR: modpost: "raise_softirq" [softirq.ko] undefined!
+ERROR: modpost: "open_softirq" [softirq.ko] undefined!
+make[4]: *** [/usr/src/linux-headers-6.14.0-28-generic/scripts/Makefile.modpost:147: Module.symvers] Error 1
+make[3]: *** [/usr/src/linux-headers-6.14.0-28-generic/Makefile:1951: modpost] Error 2
+make[2]: *** [/usr/src/linux-headers-6.14.0-28-generic/Makefile:251: __sub-make] Error 2
+make[2]: Leaving directory '/home/mac/LDD_Work/my_repo/Kernel-Divers/softirq'
+make[1]: *** [Makefile:251: __sub-make] Error 2
+make[1]: Leaving directory '/usr/src/linux-headers-6.14.0-28-generic'
+make: *** [Makefile:5: all] Error 2
+=====
+
+- raise_softirq() & open_softirq() are not exported via EXPORT_SYMBOL(), so they are invisible to loadable modules.
+- This is true regardless of whether you use a custom ID (SOFTIRQ_ID) or a predefined one (HI_SOFTIRQ, NET_TX_SOFTIRQ, etc.).
+- The kernel reserves softirq registration and triggering for built-in subsystems like networking, block I/O, and tasklets.
+
+Possible Fix
+- Better to use tasklet or Workqueue based on your requirement
+- Else,
+	1. Edit kernel/softirq.c and add:
+		EXPORT_SYMBOL(open_softirq);
+		EXPORT_SYMBOL(raise_softirq);
+	2. Then rebuild the kernel and its headers:
+		make -j$(nproc)
+		make modules_install
+		make install
+		update-grub
+		reboot
+	3.After rebooting into your custom kernel, your module will compile and link successfully.
+
+- This is not recommended for production systems—you’re exposing internal mechanisms that are tightly coupled to kernel subsystems.
+
