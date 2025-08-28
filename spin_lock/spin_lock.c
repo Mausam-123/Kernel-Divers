@@ -1,4 +1,4 @@
-#include "mutex.h"
+#include "spin_lock.h"
 
 //Declarations
 int kern_thread (void *args);
@@ -9,20 +9,23 @@ int kern_thread (void *args) {
 	int data = *(int *) args;
 
 	while(kthread_should_stop() == 0) {
-		/* mutex_lock(struct mutex *mutex) : Acquire mutex lock - blocking and uninterruptible
-		 * 
-		 * mutex_trylock(struct mutex *mutex) : It tries to acquire lock, if succeed return 1, else return 0.
-		 * userful for the user who wanted to try with mutex lock, else take alternative path - It is non-blocking and uninterruptible
-		 * 
-		 * mutex_lock_interruptible(struct mutex *mutex) : If lock is unavailable then put task to sleeping queue
-		 * if signal arrives during sleep, return -EINTR - it is interruptible
+		unsigned long flag;
+		/* spin_lock_irqsave(spinlock_t *lock, unsigned long flag) : Saves the current IRQ state, disable it locally and acquire the lock
+		 * spin_lock_irq(spinlock_t *lock) : Disables all the interrupt locally, don't save the current irq state like above.
+		 * spin_lock(spinlock_t *lock) : Does not disable interrupt locally, if critical section is shared with interrupts, it might
+		 * cause deadlock
 		 */
-		mutex_lock(&m_lock);
-		dev_print("Thread %d acquired the lock\n", data);
+		spin_lock_irqsave(&s_lock, flag);
+		dev_print("Thread %d acquired spin lock the lock\n", data);
 		for(int i = 0; i <5; i++) {
 			dev_print("%d\n", global_buffer[i]);
 		}
-		mutex_unlock(&m_lock);
+
+		/* spin_unlock_irqrestore(spinlock_t *lock, unsigned long flag) : Release lock and resume IRQ handling
+		 * spin_unlock_irq(spinlock_t *lock) : Release lock and enable all the interrupts on local core, even disabled interrupts will be enabled.
+		 * spin_unlock(spinlock_t *lock) : Release spinlock
+		 */
+		spin_unlock_irqrestore(&s_lock, flag);
 		msleep(5 * 1000);
 	}
 	
@@ -45,7 +48,7 @@ static int __init kthread_init(void) {
 	}	
 	
 	//Initialize mutex lock
-	mutex_init(&m_lock);
+	spin_lock_init(&s_lock);
 
 	// kthread_create() : Creates Kernel thread but don't start its execution
 	kthread_1 = kthread_run(kern_thread, &thread_1, "Kernel_Thread_1");
