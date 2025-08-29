@@ -1,12 +1,5 @@
 #include "timer.h"
 
-//Declarations
-int sender_threads (void *args);
-int receiver_thread (void *args);
-void timer_callback(struct timer_list *ticks);
-static int __init kthread_init(void);
-static void __exit kthread_close(void);
-
 void timer_callback(struct timer_list *ticks) {
 	dev_print("Timer callback is called\n");
 	//Send a completion signal to the receiver thread
