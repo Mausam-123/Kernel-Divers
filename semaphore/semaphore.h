@@ -8,7 +8,7 @@
 #include <linux/sched.h>        // task structs
 #include <linux/delay.h>        // delays
 #include <linux/slab.h>         // allocations
-#include <linux/semaphore.h>     // rcu lock
+#include <linux/semaphore.h>    // semaphore lock
 
 #define dev_print(fmt, ...)     printk(KERN_DEFAULT "Mausam[%s:%d] : " fmt, __func__, __LINE__, ##__VA_ARGS__)
 

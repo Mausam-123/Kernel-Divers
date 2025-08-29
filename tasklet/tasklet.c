@@ -35,9 +35,9 @@ void tasklet_handler(unsigned long data) {
 #endif
 	cpu_nu = smp_processor_id();		
 	dev_print("User has written : %ld, tasklet is running on %d cpu code\n", data, cpu_nu);
-	
+
+#if 0	
 	tasklet_unlock(tasklet);
-#if 0
 	if(test_bit(TASKLET_STATE_SCHED, &tasklet->state)) {
 		dev_print("Tasklet were re-scheduled during execution\n");
 	}
